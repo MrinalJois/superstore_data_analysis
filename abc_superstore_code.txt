@@ -1,0 +1,365 @@
+		# 1. Exploratory Data Analysis:
+
+
+	# 1.1 Data type of all columns in the "customers" table.
+
+# Query:
+
+SELECT column_name,data_type
+FROM Abc_superstore.INFORMATION_SCHEMA.COLUMNS
+WHERE table_name = 'customers';
+
+
+	# 1.2 Time  range between which the orders were placed.
+
+# Query:
+
+SELECT
+  MIN(order_purchase_timestamp) AS minimum,
+  MAX(order_purchase_timestamp) AS maximum,
+  DATE_DIFF(MAX(order_purchase_timestamp), MIN(order_purchase_timestamp), DAY) AS time_range_days
+FROM
+  Abc_superstore.orders;
+
+
+
+
+	# 1.3 Cities & States of customers who ordered during the given period
+
+# Query:
+	
+SELECT
+  COUNT(DISTINCT(geolocation city)) AS num_cities,
+  COUNT(DISTINCT(geolocation_state)) AS num_states
+FROM
+  Abc_superstore.geolocation;
+
+
+
+
+		# 2. In-depth Exploration:
+
+
+	# 2.1	 Trend in the no. of orders placed over the past years
+
+# Query:
+
+SELECT * FROM
+ 
+(SELECT EXTRACT(year FROM order_purchase_timestamp) AS year,
+COUNT(order_id) AS total_orders_in_the_year 
+FROM Abc_superstore.orders
+GROUP BY EXTRACT(year FROM order_purchase_timestamp)
+) t
+ORDER BY year;
+
+
+
+	# 2.2 Monthly seasonality in terms of the number of orders placed:
+
+
+# Query :
+
+WITH cte as(
+
+  SELECT EXTRACT(month FROM order_purchase_timestamp) AS month,
+    COUNT(order_id) AS total_orders_in_the_month,
+    EXTRACT(year FROM order_purchase_timestamp) AS year
+  FROM Abc_superstore.orders
+  GROUP BY EXTRACT(month FROM order_purchase_timestamp),
+  EXTRACT(year FROM order_purchase_timestamp)
+            )
+select month,year, total_orders_in_the_month, sum(total_orders_in_the_month) over() as grand_total 
+from cte
+order by year,month;
+
+
+
+
+	#2.3  Time of the day (Dawn, Morning, Afternoon or Night) during which the Brazilian customers placed the highest number of orders:
+		# 0-6 hrs : Dawn
+		# 7-12 hrs : Mornings
+		# 13-18 hrs : Afternoon
+		#19-23 hrs : Night
+
+# Query:
+
+with cte as  
+(select 
+order_purchase_timestamp,
+case when extract (hour from order_purchase_timestamp) BETWEEN 0 AND 6 THEN 'Dawn'
+when extract (hour from order_purchase_timestamp) BETWEEN 7 AND 12 THEN 'Mornings'
+when extract (hour from order_purchase_timestamp) BETWEEN 13 AND 18 THEN 'Afternoon'
+when extract (hour from order_purchase_timestamp) BETWEEN 19 AND 23 THEN 'Night'
+end as time_of_day
+
+from Abc_superstore.orders)
+
+select time_of_day, count(*) as num_orders from cte
+group by time_of_day;
+
+
+
+
+		#3.  Evolution of E-commerce orders in the Brazil region:
+
+
+	#3.1	Month on month no. of orders placed in each state:
+
+# Query:
+
+WITH cte as
+(
+SELECT distinct(o.order_id),
+format_date('%Y-%m', order_purchase_timestamp) as year_month, 
+g.geolocation_state 
+FROM Abc_superstore.customers c 
+LEFT JOIN Abc_superstore.orders o ON
+c.customer_id = o.customer_id
+LEFT JOIN Abc_superstore.geolocation g ON
+customer_zip_code_prefix = geolocation_zip_code_prefix
+) 
+
+SELECT year_month, geolocation_state, count(order_id) as num_orders
+FROM cte
+GROUP BY year_month, geolocation_state
+ORDER BY year_month, num_orders desc;
+
+
+	#3.2	 Customer distribution across all the states
+
+
+# Query:
+
+SELECT customer_state, count(customer_id) as customer_distribution,
+FROM Abc_superstore.customers
+GROUP BY customer_state
+ORDER BY customer_distribution desc;
+
+
+
+
+
+		#4. Impact on Economy: Analysis of the money movement by e-commerce by looking at order prices, freight etc.
+
+
+	# 4.1 Percentage increase in the cost of orders from year 2017 to 2018 (for months between Jan to Aug only).
+
+
+
+# Query:
+
+WITH cte as(
+SELECT p.payment_value,
+FORMAT_TIMESTAMP("%d/%m/%Y",o.order_purchase_timestamp) as formatted_ts, 
+sum(payment_value)over() as total_cost_17
+FROM Abc_superstore.payments p
+LEFT JOIN Abc_superstore.orders o ON  
+p.order_id=o.order_id 
+WHERE o.order_purchase_timestamp BETWEEN '2017-01-01' AND '2017-08-31'),
+
+cte2 as(
+  SELECT p.payment_value,
+FORMAT_TIMESTAMP("%d/%m/%Y",o.order_purchase_timestamp) as formatted_ts, 
+sum(payment_value)over() as total_cost_18
+FROM Abc_superstore.payments p
+LEFT JOIN Abc_superstore.orders o ON  
+p.order_id=o.order_id 
+WHERE o.order_purchase_timestamp BETWEEN '2018-01-01' AND '2018-08-31'
+)
+
+SELECT ROUND(((cte2.total_cost_18-cte.total_cost_17)/total_cost_17)*100,2) as percentage_increase FROM cte, cte2
+limit 1;
+
+
+
+
+	# 4.2 Total & Average value of order price for each state.
+
+# Query:
+
+SELECT customer_state, total_value, avg_value 
+FROM (SELECT c.customer_state,
+ROUND(sum(oi.price)over(partition by c.customer_state),2) as total_value,
+ROUND(avg(oi.price)over(partition by c.customer_state),2) as avg_value
+FROM Abc_superstore.customers c 
+LEFT JOIN Abc_superstore.orders o ON c.customer_id = o.customer_id 
+LEFT JOIN Abc_superstore.order_items oi ON o.order_id = oi.order_id) t
+group by customer_state,total_value, avg_value
+order by total_value desc;
+
+
+
+	# 4.3 Total & Average value of order freight for each state.
+
+# Query:
+
+SELECT customer_state, total_value, avg_value 
+FROM (
+SELECT c.customer_state,
+ROUND(sum(oi.freight_value)over(partition by c.customer_state),2) as total_value,
+ROUND(avg(oi.freight_value)over(partition by c.customer_state),2) as avg_value
+FROM Abc_superstore.customers c 
+LEFT JOIN Abc_superstore.orders o ON c.customer_id = o.customer_id 
+LEFT JOIN Abc_superstore.order_items oi ON o.order_id = oi.order_id
+)t
+group by customer_state,total_value, avg_value
+order by total_value desc;
+
+
+
+
+		#5. Analysis based on sales, freight, and delivery time
+
+
+	#5.1  No. of days taken to deliver each order from the order’s purchase date (as delivery time) and the difference (in days) between the estimated & actual delivery date of an order: 
+
+# Query:
+
+SELECT order_id, order_delivered_customer_date, order_purchase_timestamp,
+date_diff(order_delivered_customer_date,order_purchase_timestamp,day) as delivery_time,
+date_diff(order_delivered_customer_date,order_estimated_delivery_date,day) as diff_estimated_delivery 
+FROM Abc_superstore.orders;
+
+
+
+ 
+
+
+
+
+	#5.2	 Top 5 states with the highest & lowest average freight value.
+
+	# Top 5 states with the highest average freight value:
+
+# Query:
+
+SELECT  s.seller_state, avg(freight_value) as top5_highest
+FROM Abc_superstore.order_items o
+JOIN Abc_superstore.sellers s ON o.seller_id = s.seller_id
+group by s.seller_state
+order by top5_highest desc
+limit 5;
+
+
+	# Top 5 states with the lowest average freight value:
+
+# Query:
+
+SELECT  s.seller_state, avg(freight_value) as top5_lowest 
+FROM Abc_superstore.order_items o
+JOIN Abc_superstore.sellers s ON 
+o.seller_id = s.seller_id
+group by s.seller_state
+order by top5_lowest
+limit 5;
+
+
+
+	# 5.3	The top 5 states with the highest & lowest average delivery time:
+
+	# Top 5 states with the highest average delivery time:
+
+# Query :
+
+SELECT c.customer_state, ROUND(avg(date_diff(o.order_delivered_customer_date,o.order_purchase_timestamp,day)),2) as highest_delivery_time
+FROM Abc_superstore.orders o 
+JOIN Abc_superstore.customers c ON o.customer_id= c.customer_id
+group by c.customer_state
+order by highest_delivery_time desc
+limit 5;
+
+
+	# Top 5 states with the lowest average delivery time:
+
+# Query :
+
+SELECT c.customer_state, ROUND(avg(date_diff(o.order_delivered_customer_date,o.order_purchase_timestamp,day)),2) as top5_lowest
+FROM Abc_superstore.orders o 
+JOIN Abc_superstore.customers c ON o.customer_id= c.customer_id
+group by c.customer_state
+order by top5_lowest
+limit 5;
+
+
+
+	# 5.4	The top 5 states where the order delivery is really fast as compared to the estimated date of delivery.
+
+# Query:
+
+SELECT c.customer_state, 
+ROUND(AVG(date_diff(order_estimated_delivery_date,order_delivered_customer_date,day)),2) as fast_states 
+FROM Abc_superstore.orders o 
+JOIN Abc_superstore.customers c ON o.customer_id= c.customer_id 
+GROUP BY c.customer_state
+ORDER BY fast_states desc
+LIMIT 5;
+Output:
+
+ 
+
+		# 6. Analysis based on the payments:
+
+
+	# 6.1 The month on month no. of orders placed using different payment types.
+
+# Query :
+
+WITH cte as
+(
+SELECT payment_type,
+EXTRACT(month from order_purchase_timestamp) as month,
+EXTRACT(year from order_purchase_timestamp) as year,
+count(*) as num_of_orders
+FROM Abc_superstore.payments p 
+JOIN Abc_superstore.orders o USING(order_id)
+GROUP BY payment_type,
+EXTRACT(month from order_purchase_timestamp),
+EXTRACT(year from order_purchase_timestamp)
+)
+SELECT * FROM cte
+ORDER BY cte.year,cte.month;
+
+
+
+	# 6.2 The no. of orders placed on the basis of the payment installments that have been paid:
+
+# Query :
+
+SELECT payment_installments, count(order_id) as num_of_orders 
+FROM Abc_superstore.payments 
+GROUP BY payment_installments HAVING payment_installments >= 1
+ORDER BY payment_installments;
+
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
