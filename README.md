@@ -509,7 +509,8 @@ ORDER BY cte.year,cte.month;
 ```
 Output :
  
-![image](https://github.com/user-attachments/assets/8168023d-57f4-4583-a613-911b0cc28564)
+![image](https://github.com/user-attachments/assets/a8805b50-ab75-42a9-b476-828e55992a5e)
+
 
 
 **Insight:**
