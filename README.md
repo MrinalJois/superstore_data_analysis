@@ -250,7 +250,7 @@ Marketing campaigns can be launched offering special discounts in the states wit
 
 ## 4. Impact on Economy: Analysis of the money movement by e-commerce by looking at order prices, freight etc.
 
-### 4.1	Percentage increase in the cost of orders from year 2017 to 2018 (for months between Jan to Aug only).
+### 4.1	Percentage increase in the cost of orders from year 2017 to 2018.
 
 
 
